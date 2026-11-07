@@ -92,16 +92,19 @@ def cleanup_jobs():
             shutil.rmtree(_jobs[jid].get("cdir", ""), ignore_errors=True)
             del _jobs[jid]
 
-BASE_OPTS = {
-    "quiet": True,
-    "no_warnings": True,
-    "noplaylist": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["visionos", "android", "ios"]
-        }
-    }
-}
+def is_youtube(url):
+    h = urlparse(url).hostname or ""
+    return any(x in h.lower() for x in ("youtube.com", "youtu.be"))
+
+BASE_OPTS = {"quiet": True, "no_warnings": True, "noplaylist": True}
+
+def make_opts(url, cookie_path=None):
+    opts = dict(BASE_OPTS)
+    if is_youtube(url):
+        opts["extractor_args"] = {"youtube": {"player_client": ["visionos", "mweb", "android", "ios"]}}
+    elif cookie_path:
+        opts["cookiefile"] = cookie_path
+    return opts
 
 # ---------- ওয়ার্কার ----------
 def run_video(job, url, quality):
@@ -117,11 +120,10 @@ def run_video(job, url, quality):
             job["progress"] = 92
             job["message"] = "প্রসেস হচ্ছে (মার্জ/কনভার্ট)..."
 
-    opts = dict(BASE_OPTS, outtmpl=os.path.join(tmp, "%(title).80s.%(ext)s"),
+    opts = make_opts(url, job.get("cookie"))
+    opts.update(outtmpl=os.path.join(tmp, "%(title).80s.%(ext)s"),
                 merge_output_format="mp4", progress_hooks=[hook],
                 match_filter=yt_dlp.utils.match_filter_func(f"duration < {MAX_MINUTES * 60}"))
-    if job.get("cookie"):
-        opts["cookiefile"] = job["cookie"]
     if quality == "audio":
         opts["format"] = "bestaudio/best"
         opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}]
@@ -132,10 +134,15 @@ def run_video(job, url, quality):
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.extract_info(url, download=True)
     except Exception as e:
-        if "Requested format is not available" in str(e) and "cookiefile" in opts:
-            opts_no_cookie = dict(opts)
-            opts_no_cookie.pop("cookiefile", None)
-            with yt_dlp.YoutubeDL(opts_no_cookie) as ydl:
+        if is_youtube(url) and job.get("cookie") and "cookiefile" not in opts:
+            opts_fb = dict(opts, cookiefile=job["cookie"])
+            opts_fb.pop("extractor_args", None)
+            with yt_dlp.YoutubeDL(opts_fb) as ydl:
+                ydl.extract_info(url, download=True)
+        elif "cookiefile" in opts:
+            opts_fb = dict(opts)
+            opts_fb.pop("cookiefile", None)
+            with yt_dlp.YoutubeDL(opts_fb) as ydl:
                 ydl.extract_info(url, download=True)
         else:
             raise
@@ -197,23 +204,25 @@ def info():
         return jsonify(error="অবৈধ বা অনুমোদিত নয় এমন লিংক।"), 400
     cdir = tempfile.mkdtemp(prefix="ck_")
     try:
-        opts = dict(BASE_OPTS)
         cf = cookie_copy(cdir)
-        if cf:
-            opts["cookiefile"] = cf
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            d = ydl.extract_info(url, download=False)
-    except Exception as e:
-        if "Requested format is not available" in str(e) and "cookiefile" in opts:
-            opts_no_cookie = dict(opts)
-            opts_no_cookie.pop("cookiefile", None)
-            try:
-                with yt_dlp.YoutubeDL(opts_no_cookie) as ydl:
+        opts = make_opts(url, cf)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                d = ydl.extract_info(url, download=False)
+        except Exception as e:
+            if is_youtube(url) and cf and "cookiefile" not in opts:
+                opts_fb = dict(BASE_OPTS, cookiefile=cf)
+                with yt_dlp.YoutubeDL(opts_fb) as ydl:
                     d = ydl.extract_info(url, download=False)
-            except Exception as e2:
-                return jsonify(error=f"তথ্য আনা যায়নি: {str(e2)[:200]}"), 422
-        else:
-            return jsonify(error=f"তথ্য আনা যায়নি: {str(e)[:200]}"), 422
+            elif "cookiefile" in opts:
+                opts_fb = dict(opts)
+                opts_fb.pop("cookiefile", None)
+                with yt_dlp.YoutubeDL(opts_fb) as ydl:
+                    d = ydl.extract_info(url, download=False)
+            else:
+                raise
+    except Exception as e:
+        return jsonify(error=f"তথ্য আনা যায়নি: {str(e)[:200]}"), 422
     finally:
         shutil.rmtree(cdir, ignore_errors=True)
     if not d:
