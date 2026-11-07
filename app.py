@@ -120,7 +120,7 @@ def get_extract_opts(url, cookie_path=None):
     if platform == "youtube":
         opts["extractor_args"] = {
             "youtube": {
-                "player_client": ["visionos", "mweb", "android", "ios"]
+                "player_client": ["tv_embedded", "android_creator", "visionos", "android"]
             }
         }
     elif cookie_path:
@@ -151,7 +151,7 @@ def run_video(job, url, quality):
     if platform == "youtube":
         opts["extractor_args"] = {
             "youtube": {
-                "player_client": ["visionos", "mweb", "android", "ios"]
+                "player_client": ["tv_embedded", "android_creator", "visionos", "android"]
             }
         }
     elif job.get("cookie"):
@@ -166,8 +166,9 @@ def run_video(job, url, quality):
         }]
     else:
         q = int(re.sub(r"\D", "", quality) or 1080)
-        # ফুল এইচডি বা এইচডির জন্য সর্বোচ্চ কোয়ালিটি নির্বাচন
-        opts["format"] = f"bv*[height<={q}]+ba/b[height<={q}]/b"
+        # ফুল এইচডি বা এইচডির জন্য সর্বোচ্চ কোয়ালিটি নির্বাচন (ভার্টিক্যাল ১০৮০x১৩৫০ পর্যন্ত)
+        max_h = 1440 if q >= 1080 else (900 if q >= 720 else q)
+        opts["format"] = f"bv*[height<={max_h}]+ba/b[height<={max_h}]/b"
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -293,29 +294,41 @@ def info():
         d = next((e for e in d["entries"] if e), d)
 
     raw_formats = d.get("formats", [])
-    # শুধুমাত্র রিয়েল ভিডিও স্ট্রিম থাকা রেজোলিউশন ফিল্টার
-    video_formats = [f for f in raw_formats if f.get("height") and f.get("vcodec") != "none"]
+    # শুধুমাত্র রিয়েল ভিডিও স্ট্রিম থাকা রেজোলিউশন ফিল্টার (mhtml ও থাম্বনেইল স্টোরিবোর্ড বাদ দেওয়া)
+    video_formats = [
+        f for f in raw_formats
+        if f.get("height")
+        and f.get("vcodec") not in (None, "none", "images")
+        and f.get("protocol") != "mhtml"
+        and f.get("ext") != "mhtml"
+        and not str(f.get("format_id", "")).startswith("sb")
+        and int(f.get("height", 0)) >= 144
+    ]
     heights = sorted({int(f["height"]) for f in video_formats}, reverse=True)
 
-    # যদি টুইটার বা অন্য সাইট হয় এবং সরাসরি mp4 থাকে
-    if not heights and raw_formats:
-        heights = sorted({int(f.get("height", 720)) for f in raw_formats if f.get("height")}, reverse=True)
-
-    # রেজোলিউশন ক্যাটাগরি তৈরি
+    # রেজোলিউশন ক্যাটাগরি তৈরি (1080p, 720p, 480p, 360p)
     resolutions = []
-    has_1080 = any(h >= 1080 for h in heights)
-    has_720 = any(h >= 720 and h < 1080 for h in heights)
-
+    seen = set()
     for h in heights:
-        label = f"{h}p"
-        badge = ""
-        if h >= 1440:
-            badge = "2K/4K Ultra HD"
-        elif h >= 1080:
-            badge = "Full HD"
-        elif h >= 720:
-            badge = "HD"
-        resolutions.append({"height": h, "label": label, "badge": badge})
+        if h >= 1080 and "1080" not in seen:
+            resolutions.append({"height": 1080, "actual_height": h, "label": "1080p", "badge": "Full HD"})
+            seen.add("1080")
+        elif h >= 720 and h < 1080 and "720" not in seen:
+            resolutions.append({"height": 720, "actual_height": h, "label": "720p", "badge": "HD"})
+            seen.add("720")
+        elif h >= 480 and h < 720 and "480" not in seen:
+            resolutions.append({"height": 480, "actual_height": h, "label": "480p", "badge": "SD"})
+            seen.add("480")
+        elif h >= 360 and h < 480 and "360" not in seen:
+            resolutions.append({"height": 360, "actual_height": h, "label": "360p", "badge": "SD"})
+            seen.add("360")
+
+    # কোনো ভিডিও ফরম্যাট না পেলে ডিফল্ট স্ট্যান্ডার্ড অপশন
+    if not resolutions:
+        resolutions = [
+            {"height": 1080, "actual_height": 1080, "label": "1080p", "badge": "Full HD"},
+            {"height": 720, "actual_height": 720, "label": "720p", "badge": "HD"}
+        ]
 
     return jsonify(
         platform=platform,
