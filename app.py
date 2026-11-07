@@ -98,7 +98,8 @@ BASE_OPTS = {
     "noplaylist": True,
     "extractor_args": {
         "youtube": {
-            "player_client": ["android", "ios", "mweb"]
+            "player_client": ["android", "ios", "mweb"],
+            "player_skip": ["webpage", "configs"]
         }
     }
 }
