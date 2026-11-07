@@ -98,8 +98,7 @@ BASE_OPTS = {
     "noplaylist": True,
     "extractor_args": {
         "youtube": {
-            "player_client": ["android", "ios", "mweb"],
-            "player_skip": ["webpage", "configs"]
+            "player_client": ["visionos", "android", "ios"]
         }
     }
 }
@@ -129,8 +128,17 @@ def run_video(job, url, quality):
     else:
         q = int(re.sub(r"\D", "", quality) or 1080)
         opts["format"] = f"bv*[height<={q}]+ba/b[height<={q}]/b"
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=True)
+    except Exception as e:
+        if "Requested format is not available" in str(e) and "cookiefile" in opts:
+            opts_no_cookie = dict(opts)
+            opts_no_cookie.pop("cookiefile", None)
+            with yt_dlp.YoutubeDL(opts_no_cookie) as ydl:
+                ydl.extract_info(url, download=True)
+        else:
+            raise
     files = [os.path.join(tmp, f) for f in os.listdir(tmp) if os.path.isfile(os.path.join(tmp, f)) and not f.endswith((".part", ".ytdl"))]
     if not files:
         raise RuntimeError(f"ভিডিও {MAX_MINUTES} মিনিটের বেশি বা ডাউনলোডযোগ্য নয়।")
@@ -196,7 +204,16 @@ def info():
         with yt_dlp.YoutubeDL(opts) as ydl:
             d = ydl.extract_info(url, download=False)
     except Exception as e:
-        return jsonify(error=f"তথ্য আনা যায়নি: {str(e)[:200]}"), 422
+        if "Requested format is not available" in str(e) and "cookiefile" in opts:
+            opts_no_cookie = dict(opts)
+            opts_no_cookie.pop("cookiefile", None)
+            try:
+                with yt_dlp.YoutubeDL(opts_no_cookie) as ydl:
+                    d = ydl.extract_info(url, download=False)
+            except Exception as e2:
+                return jsonify(error=f"তথ্য আনা যায়নি: {str(e2)[:200]}"), 422
+        else:
+            return jsonify(error=f"তথ্য আনা যায়নি: {str(e)[:200]}"), 422
     finally:
         shutil.rmtree(cdir, ignore_errors=True)
     if not d:
