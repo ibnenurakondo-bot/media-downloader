@@ -5,3 +5,4 @@ cookies.txt
 .venv/
 *.zip
 *.log
+*.exe

@@ -59,20 +59,27 @@ def cookie_copy(cdir):
     return dst
 
 # FFmpeg লোকেশন নির্ধারণ
-FFMPEG_EXE = None
-if shutil.which("ffmpeg"):
-    FFMPEG_EXE = "ffmpeg"
-else:
-    # Windows WinGet বা কমন লোকেশন চেক
-    winget_path = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe")
-    if os.path.exists(winget_path):
-        FFMPEG_EXE = winget_path
-    else:
-        try:
-            import imageio_ffmpeg
-            FFMPEG_EXE = imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception:
-            FFMPEG_EXE = None
+def get_ffmpeg_path():
+    # 1. System PATH
+    w = shutil.which("ffmpeg")
+    if w and os.path.isabs(w):
+        return w
+    # 2. Local project folder
+    local_ff = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg.exe")
+    if os.path.exists(local_ff):
+        return local_ff
+    # 3. Windows WinGet package
+    wg = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe")
+    if os.path.exists(wg):
+        return wg
+    # 4. imageio_ffmpeg fallback
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+FFMPEG_PATH = get_ffmpeg_path()
 
 COOKIES_BROWSER = os.getenv("COOKIES_BROWSER", "")
 def apply_cookies(opts, path):
@@ -166,8 +173,8 @@ def run_video(job, url, quality):
         match_filter=yt_dlp.utils.match_filter_func(f"duration <? {MAX_MINUTES * 60} & !is_live")
     )
     apply_cookies(opts, job.get("cookie"))
-    if FFMPEG_EXE:
-        opts["ffmpeg_location"] = FFMPEG_EXE
+    if FFMPEG_PATH:
+        opts["ffmpeg_location"] = FFMPEG_PATH
 
     if quality == "audio":
         opts["format"] = "bestaudio/best"
@@ -435,7 +442,7 @@ if UPDATE_HOURS > 0:
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, mode="local" if LOCAL else "cloud", ffmpeg=bool(FFMPEG_EXE), versions=get_ver())
+    return jsonify(ok=True, mode="local" if LOCAL else "cloud", ffmpeg=bool(FFMPEG_PATH), versions=get_ver())
 
 @app.get("/api/config")
 def config():
@@ -479,7 +486,7 @@ if __name__ == "__main__":
     print(f" Local App   : http://127.0.0.1:{port}")
     if host == "0.0.0.0" and lan_ip():
         print(f" Phone (Wi-Fi): http://{lan_ip()}:{port}")
-    print(" FFmpeg      :", "Ready" if FFMPEG_EXE else "Missing (fallback to direct stream)")
+    print(" FFmpeg      :", FFMPEG_PATH if FFMPEG_PATH else "Missing (fallback to direct stream)")
     print(" Telegram    :", "Enabled" if TG_ENABLED else "Local only")
     print(" Stop        : Press Ctrl+C")
     print("==============================================\n")

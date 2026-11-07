@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+set PATH=%~dp0;%PATH%
 title Media Downloader
 set PY=python
 where python >nul 2>nul || set PY=py -3
