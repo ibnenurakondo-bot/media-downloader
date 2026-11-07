@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>মিডিয়া ডাউনলোডার</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1a1d21;--muted:#6b7280;--accent:#2563eb;--border:#e5e7eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e8eaed;--muted:#9aa0a6;--accent:#5b8cff;--border:#2a2e36}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Bengali",sans-serif;display:flex;justify-content:center;padding:24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:560px}
+h1{font-size:1.3rem;margin:0 0 4px}.muted{color:var(--muted);font-size:.85rem}
+input[type=url],input[type=password],select{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:1rem;margin:12px 0 8px}
+button{width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:1rem;cursor:pointer;margin-top:8px}
+button:disabled{opacity:.5;cursor:not-allowed}
+#preview{display:none;margin-top:16px}#preview img{width:100%;border-radius:10px}
+#msg{margin-top:12px;font-size:.9rem}
+#mode{margin-top:0}
+label.c{display:flex;gap:8px;align-items:flex-start;font-size:.85rem;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>মিডিয়া ডাউনলোডার</h1>
+  <div class="muted">লিংক দিন, কোয়ালিটি বেছে নিন, ডাউনলোড করুন।</div>
+  <input id="url" type="url" placeholder="https://...">
+  <input id="code" type="password" placeholder="অ্যাক্সেস কোড" style="display:none;width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:1rem;margin:0 0 8px">
+  <select id="mode">
+    <option value="video">ভিডিও / অডিও</option>
+    <option value="image">ছবি</option>
+  </select>
+  <button id="check">তথ্য দেখুন</button>
+  <div id="preview">
+    <img id="thumb" alt="">
+    <p id="title"></p>
+    <select id="quality"></select>
+    <label class="c"><input type="checkbox" id="ok"> আমি নিশ্চিত করছি যে এই কনটেন্ট ডাউনলোডের অধিকার/অনুমতি আমার আছে এবং আমি সংশ্লিষ্ট সাইটের শর্তাবলি মানছি।</label>
+    <button id="dl" disabled>ডাউনলোড</button>
+  </div>
+  <div id="bar" style="display:none;margin-top:14px"><div style="height:8px;background:var(--border);border-radius:8px;overflow:hidden"><div id="fill" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div></div></div>
+  <div id="msg" class="muted"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+fetch('/api/config').then(r=>r.json()).then(c=>{if(c.code_required){$('code').style.display='block';$('code').value=sessionStorage.getItem('code')||''}}).catch(()=>{});
+$('code').oninput=()=>sessionStorage.setItem('code',$('code').value);
+$('ok').onchange=()=>$('dl').disabled=!$('ok').checked;
+const show=(ok)=>{$('preview').style.display='block';$('quality').style.display=ok?'block':'none';$('thumb').style.display=ok?'block':'none';$('title').style.display=ok?'block':'none'};
+$('mode').onchange=()=>{$('preview').style.display='none';$('check').textContent=$('mode').value==='image'?'চালিয়ে যান':'তথ্য দেখুন'};
+$('url').addEventListener('keydown',e=>{if(e.key==='Enter')$('check').click()});
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')$('check').click()});
+$('check').onclick=async()=>{
+  $('preview').style.display='none';
+  if($('mode').value==='image'){$('msg').textContent='';show(false);return}
+  $('msg').textContent='লোড হচ্ছে...';
+  const r=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value,code:$('code').value})});
+  const d=await r.json();
+  if(!r.ok){$('msg').textContent=d.error;return}
+  $('msg').textContent='';
+  $('thumb').src=d.thumbnail||'';$('title').textContent=d.title;
+  const q=$('quality');q.innerHTML='';
+  const validHeights=(d.heights||[]).filter(h=>h>=360);
+  const list=validHeights.length?validHeights:(d.heights||[]);
+  list.forEach(h=>q.add(new Option(h+'p'+(h>=1080?' (Full HD)':''),h)));
+  q.add(new Option('শুধু অডিও (MP3)','audio'));
+  show(true);
+};
+$('dl').onclick=async()=>{
+  $('dl').disabled=true;$('bar').style.display='block';$('fill').style.width='0';$('msg').textContent='শুরু হচ্ছে...';
+  const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value,mode:$('mode').value,quality:$('quality').value,code:$('code').value})});
+  const d=await r.json();
+  if(!r.ok){$('msg').textContent=d.error;$('dl').disabled=false;return}
+  const t=setInterval(async()=>{
+    try{
+      const s=await (await fetch('/api/status/'+d.job)).json();
+      $('fill').style.width=(s.progress||0)+'%';$('msg').textContent=s.message||s.error||'';
+      if(s.status==='done'){clearInterval(t);$('dl').disabled=false;location.href='/api/file/'+d.job}
+      if(s.status==='error'||s.error){clearInterval(t);$('dl').disabled=false}
+    }catch(e){clearInterval(t);$('msg').textContent='সংযোগ বিচ্ছিন্ন।';$('dl').disabled=false}
+  },1500);
+};
+</script>
+</body>
+</html>

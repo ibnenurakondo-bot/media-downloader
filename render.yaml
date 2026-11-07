@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: media-downloader
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ACCESS_CODE
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: COOKIES_B64
+        sync: false
