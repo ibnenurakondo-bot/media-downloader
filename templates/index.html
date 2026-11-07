@@ -1,85 +1,877 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>মিডিয়া ডাউনলোডার</title>
-<style>
-:root{--bg:#f6f7f9;--card:#fff;--text:#1a1d21;--muted:#6b7280;--accent:#2563eb;--border:#e5e7eb}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e8eaed;--muted:#9aa0a6;--accent:#5b8cff;--border:#2a2e36}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans Bengali",sans-serif;display:flex;justify-content:center;padding:24px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:560px}
-h1{font-size:1.3rem;margin:0 0 4px}.muted{color:var(--muted);font-size:.85rem}
-input[type=url],input[type=password],select{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:1rem;margin:12px 0 8px}
-button{width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:1rem;cursor:pointer;margin-top:8px}
-button:disabled{opacity:.5;cursor:not-allowed}
-#preview{display:none;margin-top:16px}#preview img{width:100%;border-radius:10px}
-#msg{margin-top:12px;font-size:.9rem}
-#mode{margin-top:0}
-label.c{display:flex;gap:8px;align-items:flex-start;font-size:.85rem;color:var(--muted);margin-top:6px}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>মিডিয়া ডাউনলোডার — HD & Full HD Video & Photo Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 30, 49, 0.85);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --input-bg: #111827;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+      --accent-glow: rgba(139, 92, 246, 0.35);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --success: #10b981;
+      --border-radius: 18px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 85% 80%, rgba(217, 70, 239, 0.12) 0%, transparent 40%);
+      color: var(--text);
+      font-family: 'Hind Siliguri', 'Plus Jakarta Sans', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 18px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #c7d2fe;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1.25;
+      background: linear-gradient(135deg, #ffffff 30%, #cbd5e1 70%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 520px;
+      line-height: 1.5;
+    }
+
+    /* Platform Grid */
+    .platforms {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .p-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.82rem;
+      color: #94a3b8;
+      transition: all 0.25s ease;
+    }
+    .p-tag svg { width: 15px; height: 15px; fill: currentColor; }
+    .p-tag.active {
+      border-color: #8b5cf6;
+      background: rgba(139, 92, 246, 0.2);
+      color: #ffffff;
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+      transform: translateY(-2px);
+    }
+
+    /* Main Card */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius);
+      padding: 26px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Mode Tabs */
+    .mode-tabs {
+      display: flex;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 18px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .tab-btn.active {
+      background: var(--accent-grad);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+
+    /* Input Field Container */
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .input-box {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1.5px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 15px 120px 15px 18px;
+      font-size: 1rem;
+      color: #fff;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .input-box:focus {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.2);
+    }
+    .input-actions {
+      position: absolute;
+      right: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .btn-paste {
+      padding: 7px 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: #cbd5e1;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .btn-paste:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+    }
+    .btn-clear {
+      padding: 7px 10px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-size: 1rem;
+      cursor: pointer;
+      display: none;
+    }
+
+    .code-box {
+      display: none;
+      width: 100%;
+      margin-top: 10px;
+      background: var(--input-bg);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    /* Fetch Button */
+    .btn-fetch {
+      width: 100%;
+      margin-top: 14px;
+      padding: 14px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent-grad);
+      color: #ffffff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 20px var(--accent-glow);
+      transition: transform 0.15s, opacity 0.2s;
+      font-family: inherit;
+    }
+    .btn-fetch:hover { transform: translateY(-1px); }
+    .btn-fetch:active { transform: translateY(1px); }
+    .btn-fetch:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* Preview Card */
+    #previewCard {
+      display: none;
+      margin-top: 22px;
+      padding-top: 20px;
+      border-top: 1px solid var(--card-border);
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .media-info {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .thumb-wrap {
+      position: relative;
+      width: 140px;
+      min-width: 140px;
+      height: 95px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #1e293b;
+    }
+    .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .duration-badge {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+    .media-details {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      overflow: hidden;
+    }
+    .media-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .media-author {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Quality Selection */
+    .quality-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .quality-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .q-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: all 0.2s;
+    }
+    .q-chip:hover {
+      border-color: #a855f7;
+      background: rgba(168, 85, 247, 0.1);
+    }
+    .q-chip.selected {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: #6366f1;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
+    }
+    .q-res { font-size: 0.95rem; font-weight: 700; color: #fff; }
+    .q-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #38bdf8;
+      text-transform: uppercase;
+    }
+    .q-badge.best { color: #f59e0b; }
+    .q-badge.audio { color: #34d399; }
+
+    /* Disclaimer & Download Button */
+    .checkbox-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .checkbox-wrap input { margin-top: 3px; accent-color: #8b5cf6; }
+
+    .btn-download {
+      width: 100%;
+      padding: 14px;
+      border: 0;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+      transition: transform 0.15s, opacity 0.2s;
+      font-family: inherit;
+    }
+    .btn-download:hover { transform: translateY(-1px); }
+    .btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress & Status */
+    #progressBox {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .bar-track {
+      height: 9px;
+      background: #1e293b;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-grad);
+      border-radius: 99px;
+      transition: width 0.3s ease;
+      box-shadow: 0 0 10px rgba(217, 70, 239, 0.6);
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.88rem;
+    }
+    .status-msg {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #cbd5e1;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #34d399;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+    .status-pct { font-weight: 700; color: #a78bfa; }
+
+    /* Alert / Error */
+    #errorBox {
+      display: none;
+      margin-top: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    /* Features Section */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .f-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 14px;
+      padding: 16px 14px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .f-icon { font-size: 1.5rem; margin-bottom: 2px; }
+    .f-title { font-size: 0.92rem; font-weight: 700; color: #f1f5f9; }
+    .f-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.35; }
+
+    .footer {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.82rem;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 600px) {
+      .header h1 { font-size: 1.8rem; }
+      .thumb-wrap { width: 110px; min-width: 110px; height: 80px; }
+      .features { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
-<div class="card">
-  <h1>মিডিয়া ডাউনলোডার</h1>
-  <div class="muted">লিংক দিন, কোয়ালিটি বেছে নিন, ডাউনলোড করুন।</div>
-  <input id="url" type="url" placeholder="https://...">
-  <input id="code" type="password" placeholder="অ্যাক্সেস কোড" style="display:none;width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:1rem;margin:0 0 8px">
-  <select id="mode">
-    <option value="video">ভিডিও / অডিও</option>
-    <option value="image">ছবি</option>
-  </select>
-  <button id="check">তথ্য দেখুন</button>
-  <div id="preview">
-    <img id="thumb" alt="">
-    <p id="title"></p>
-    <select id="quality"></select>
-    <label class="c"><input type="checkbox" id="ok"> আমি নিশ্চিত করছি যে এই কনটেন্ট ডাউনলোডের অধিকার/অনুমতি আমার আছে এবং আমি সংশ্লিষ্ট সাইটের শর্তাবলি মানছি।</label>
-    <button id="dl" disabled>ডাউনলোড</button>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="badge-pill">✨ অল-ইন-ওয়ান সুপারফাস্ট ডাউনলোডার</div>
+    <h1>সোশ্যাল মিডিয়া ডাউনলোডার</h1>
+    <p>YouTube, Twitter (X), Facebook, TikTok, Instagram থেকে এক ক্লিকে Full HD ভিডিও ও ছবি ডাউনলোড করুন।</p>
   </div>
-  <div id="bar" style="display:none;margin-top:14px"><div style="height:8px;background:var(--border);border-radius:8px;overflow:hidden"><div id="fill" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div></div></div>
-  <div id="msg" class="muted"></div>
+
+  <!-- Supported Platform Badges -->
+  <div class="platforms">
+    <div class="p-tag" id="p-youtube">
+      <svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+      YouTube
+    </div>
+    <div class="p-tag" id="p-twitter">
+      <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      Twitter (X)
+    </div>
+    <div class="p-tag" id="p-facebook">
+      <svg viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+      Facebook
+    </div>
+    <div class="p-tag" id="p-tiktok">
+      <svg viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+      TikTok
+    </div>
+    <div class="p-tag" id="p-instagram">
+      <svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+      Instagram
+    </div>
+  </div>
+
+  <!-- Main Downloader Card -->
+  <div class="card">
+    
+    <!-- Mode Switcher -->
+    <div class="mode-tabs">
+      <button class="tab-btn active" id="tabVideo" onclick="setMode('video')">🎬 ভিডিও ও অডিও (Full HD)</button>
+      <button class="tab-btn" id="tabImage" onclick="setMode('image')">🖼️ ছবি ও গ্যালারি (Original HD)</button>
+    </div>
+
+    <!-- URL Input -->
+    <div class="input-wrapper">
+      <input type="url" id="urlInput" class="input-box" placeholder="এখানে ভিডিও বা ছবির লিঙ্ক পেস্ট করুন (Paste URL)..." autocomplete="off">
+      <div class="input-actions">
+        <button class="btn-clear" id="btnClear" onclick="clearInput()">✕</button>
+        <button class="btn-paste" id="btnPaste" onclick="pasteClipboard()">📋 পেস্ট</button>
+      </div>
+    </div>
+
+    <input type="password" id="accessCode" class="code-box" placeholder="অ্যাক্সেস কোড দিন...">
+
+    <!-- Action Button -->
+    <button class="btn-fetch" id="btnFetch" onclick="fetchMediaInfo()">
+      <span id="fetchBtnText">তথ্য খুঁজুন (Find Media)</span>
+    </button>
+
+    <!-- Error Box -->
+    <div id="errorBox"></div>
+
+    <!-- Preview & Download Section -->
+    <div id="previewCard">
+      <div class="media-info">
+        <div class="thumb-wrap" id="thumbWrap">
+          <img id="mediaThumb" src="" alt="Thumbnail">
+          <span class="duration-badge" id="mediaDuration"></span>
+        </div>
+        <div class="media-details">
+          <div class="media-title" id="mediaTitle"></div>
+          <div class="media-author" id="mediaAuthor"></div>
+        </div>
+      </div>
+
+      <!-- Video Resolution Selector -->
+      <div id="videoOptions">
+        <label class="quality-label">ডাউনলোড কোয়ালিটি বেছে নিন:</label>
+        <div class="quality-grid" id="qualityGrid"></div>
+      </div>
+
+      <!-- Agreement & Download Button -->
+      <label class="checkbox-wrap">
+        <input type="checkbox" id="chkAgree" checked onchange="toggleDownloadBtn()">
+        <span>আমি নিশ্চিত করছি যে এই কনটেন্ট ডাউনলোডের অধিকার বা অনুমতি আমার আছে।</span>
+      </label>
+
+      <button class="btn-download" id="btnDownload" onclick="startDownload()">⬇️ ডাউনলোড শুরু করুন</button>
+    </div>
+
+    <!-- Progress & Live Status -->
+    <div id="progressBox">
+      <div class="bar-track">
+        <div class="bar-fill" id="barFill"></div>
+      </div>
+      <div class="status-row">
+        <div class="status-msg">
+          <div class="pulse-dot"></div>
+          <span id="statusText">প্রস্তুত হচ্ছে...</span>
+        </div>
+        <div class="status-pct" id="statusPct">0%</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Feature Highlights -->
+  <div class="features">
+    <div class="f-card">
+      <div class="f-icon">⚡</div>
+      <div class="f-title">সুপারফাস্ট স্পিড</div>
+      <div class="f-desc">হাই-স্পিড ক্লাউড সার্ভার এবং FFmpeg দিয়ে বিদ্যুৎ গতিতে কনভার্ট।</div>
+    </div>
+    <div class="f-card">
+      <div class="f-icon">💎</div>
+      <div class="f-title">Full HD & Original</div>
+      <div class="f-desc">১০৮০p Full HD ভিডিও এবং আসল রেজোলিউশনের ক্রিস্টাল ক্লিয়ার ছবি।</div>
+    </div>
+    <div class="f-card">
+      <div class="f-icon">🛡️</div>
+      <div class="f-title">নিরাপদ ও বিজ্ঞাপনহীন</div>
+      <div class="f-desc">কোনো অযাচিত বিজ্ঞাপন বা রিডাইরেক্ট নেই, সরাসরি ডিভাইস স্টোরেজে সেভ।</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    ব্যক্তিগত ও শিক্ষামূলক ব্যবহারের জন্য তৈরি • Powered by Flask, yt-dlp & FFmpeg
+  </div>
+
 </div>
+
 <script>
-const $=id=>document.getElementById(id);
-fetch('/api/config').then(r=>r.json()).then(c=>{if(c.code_required){$('code').style.display='block';$('code').value=sessionStorage.getItem('code')||''}}).catch(()=>{});
-$('code').oninput=()=>sessionStorage.setItem('code',$('code').value);
-$('ok').onchange=()=>$('dl').disabled=!$('ok').checked;
-const show=(ok)=>{$('preview').style.display='block';$('quality').style.display=ok?'block':'none';$('thumb').style.display=ok?'block':'none';$('title').style.display=ok?'block':'none'};
-$('mode').onchange=()=>{$('preview').style.display='none';$('check').textContent=$('mode').value==='image'?'চালিয়ে যান':'তথ্য দেখুন'};
-$('url').addEventListener('keydown',e=>{if(e.key==='Enter')$('check').click()});
-$('code').addEventListener('keydown',e=>{if(e.key==='Enter')$('check').click()});
-$('check').onclick=async()=>{
-  $('preview').style.display='none';
-  if($('mode').value==='image'){$('msg').textContent='';show(false);return}
-  $('msg').textContent='লোড হচ্ছে...';
-  const r=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value,code:$('code').value})});
-  const d=await r.json();
-  if(!r.ok){$('msg').textContent=d.error;return}
-  $('msg').textContent='';
-  $('thumb').src=d.thumbnail||'';$('title').textContent=d.title;
-  const q=$('quality');q.innerHTML='';
-  const validHeights=(d.heights||[]).filter(h=>h>=360);
-  const list=validHeights.length?validHeights:(d.heights||[]);
-  list.forEach(h=>q.add(new Option(h+'p'+(h>=1080?' (Full HD)':''),h)));
-  q.add(new Option('শুধু অডিও (MP3)','audio'));
-  show(true);
-};
-$('dl').onclick=async()=>{
-  $('dl').disabled=true;$('bar').style.display='block';$('fill').style.width='0';$('msg').textContent='শুরু হচ্ছে...';
-  const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value,mode:$('mode').value,quality:$('quality').value,code:$('code').value})});
-  const d=await r.json();
-  if(!r.ok){$('msg').textContent=d.error;$('dl').disabled=false;return}
-  const t=setInterval(async()=>{
-    try{
-      const s=await (await fetch('/api/status/'+d.job)).json();
-      $('fill').style.width=(s.progress||0)+'%';$('msg').textContent=s.message||s.error||'';
-      if(s.status==='done'){clearInterval(t);$('dl').disabled=false;location.href='/api/file/'+d.job}
-      if(s.status==='error'||s.error){clearInterval(t);$('dl').disabled=false}
-    }catch(e){clearInterval(t);$('msg').textContent='সংযোগ বিচ্ছিন্ন।';$('dl').disabled=false}
-  },1500);
-};
+  let currentMode = 'video';
+  let selectedQuality = '1080';
+  let activePlatform = null;
+  const $ = id => document.getElementById(id);
+
+  // Check config on load
+  fetch('/api/config')
+    .then(r => r.json())
+    .then(cfg => {
+      if (cfg.code_required) {
+        $('accessCode').style.display = 'block';
+        $('accessCode').value = sessionStorage.getItem('access_code') || '';
+      }
+    }).catch(() => {});
+
+  $('accessCode').oninput = () => sessionStorage.setItem('access_code', $('accessCode').value);
+
+  // Platform Detection on typing/paste
+  $('urlInput').addEventListener('input', () => {
+    const val = $('urlInput').value.trim();
+    $('btnClear').style.display = val ? 'block' : 'none';
+    detectAndHighlightPlatform(val);
+  });
+
+  $('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('btnFetch').click();
+  });
+
+  function detectAndHighlightPlatform(url) {
+    document.querySelectorAll('.p-tag').forEach(el => el.classList.remove('active'));
+    if (!url) return;
+    const u = url.toLowerCase();
+    if (u.includes('youtube.com') || u.includes('youtu.be')) $('p-youtube').classList.add('active');
+    else if (u.includes('twitter.com') || u.includes('x.com')) $('p-twitter').classList.add('active');
+    else if (u.includes('facebook.com') || u.includes('fb.watch') || u.includes('fb.com')) $('p-facebook').classList.add('active');
+    else if (u.includes('tiktok.com')) $('p-tiktok').classList.add('active');
+    else if (u.includes('instagram.com')) $('p-instagram').classList.add('active');
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    $('tabVideo').classList.toggle('active', mode === 'video');
+    $('tabImage').classList.toggle('active', mode === 'image');
+    $('previewCard').style.display = 'none';
+    $('videoOptions').style.display = mode === 'video' ? 'block' : 'none';
+    $('fetchBtnText').textContent = mode === 'video' ? 'তথ্য খুঁজুন (Find Media)' : 'ছবি খুঁজুন (Find Photos)';
+    clearError();
+  }
+
+  function clearInput() {
+    $('urlInput').value = '';
+    $('btnClear').style.display = 'none';
+    $('previewCard').style.display = 'none';
+    detectAndHighlightPlatform('');
+    clearError();
+  }
+
+  async function pasteClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        $('urlInput').value = text.trim();
+        $('btnClear').style.display = 'block';
+        detectAndHighlightPlatform(text);
+        $('btnFetch').click();
+      }
+    } catch (e) {
+      $('urlInput').focus();
+    }
+  }
+
+  function showError(msg) {
+    $('errorBox').textContent = msg;
+    $('errorBox').style.display = 'block';
+  }
+
+  function clearError() {
+    $('errorBox').style.display = 'none';
+    $('errorBox').textContent = '';
+  }
+
+  function formatDuration(sec) {
+    if (!sec) return '';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  async function fetchMediaInfo() {
+    const url = $('urlInput').value.trim();
+    if (!url) {
+      showError('অনুগ্রহ করে একটি সঠিক ভিডিও বা ছবির লিঙ্ক দিন।');
+      return;
+    }
+
+    clearError();
+    $('previewCard').style.display = 'none';
+    $('btnFetch').disabled = true;
+    $('fetchBtnText').textContent = 'তথ্য লোড হচ্ছে...';
+
+    if (currentMode === 'image') {
+      // Image mode: Direct preview without heavy video parser
+      $('mediaThumb').src = '';
+      $('thumbWrap').style.display = 'none';
+      $('mediaTitle').textContent = 'গ্যালারি / ছবি ডাউনলোড';
+      $('mediaAuthor').textContent = url;
+      $('videoOptions').style.display = 'none';
+      $('previewCard').style.display = 'block';
+      $('btnFetch').disabled = false;
+      $('fetchBtnText').textContent = 'ছবি খুঁজুন (Find Photos)';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, code: $('accessCode').value })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'তথ্য আনা সম্ভব হয়নি। লিঙ্কটি আবার পরীক্ষা করুন।');
+      }
+
+      // Display Details
+      $('thumbWrap').style.display = data.thumbnail ? 'block' : 'none';
+      $('mediaThumb').src = data.thumbnail || '';
+      $('mediaDuration').textContent = formatDuration(data.duration);
+      $('mediaTitle').textContent = data.title || 'মিডিয়া ফাইল';
+      $('mediaAuthor').textContent = (data.uploader ? '👤 ' + data.uploader : '') + (data.platform ? ' • ' + data.platform.toUpperCase() : '');
+
+      // Build Quality Grid
+      const qGrid = $('qualityGrid');
+      qGrid.innerHTML = '';
+
+      let availableResolutions = data.resolutions || [];
+      if (!availableResolutions.length && data.heights && data.heights.length) {
+        availableResolutions = data.heights.map(h => ({ height: h, label: h + 'p', badge: h >= 1080 ? 'Full HD' : (h >= 720 ? 'HD' : '') }));
+      }
+
+      // Add default 1080p and 720p if heights was empty (e.g. some Twitter / TikTok direct links)
+      if (!availableResolutions.length) {
+        availableResolutions = [
+          { height: 1080, label: '1080p', badge: 'Full HD' },
+          { height: 720, label: '720p', badge: 'HD' }
+        ];
+      }
+
+      // Select the highest available resolution by default
+      selectedQuality = String(availableResolutions[0].height);
+
+      availableResolutions.forEach((r, idx) => {
+        const chip = document.createElement('div');
+        chip.className = 'q-chip' + (idx === 0 ? ' selected' : '');
+        chip.dataset.val = r.height;
+        chip.innerHTML = `
+          <div class="q-res">${r.label}</div>
+          <div class="q-badge ${r.badge.includes('Full') ? 'best' : ''}">${r.badge || 'ভিডিও'}</div>
+        `;
+        chip.onclick = () => selectQuality(chip, String(r.height));
+        qGrid.appendChild(chip);
+      });
+
+      // Add MP3 Audio Option
+      const audioChip = document.createElement('div');
+      audioChip.className = 'q-chip';
+      audioChip.dataset.val = 'audio';
+      audioChip.innerHTML = `
+        <div class="q-res">MP3 অডিও</div>
+        <div class="q-badge audio">320kbps High Q</div>
+      `;
+      audioChip.onclick = () => selectQuality(audioChip, 'audio');
+      qGrid.appendChild(audioChip);
+
+      $('videoOptions').style.display = 'block';
+      $('previewCard').style.display = 'block';
+
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      $('btnFetch').disabled = false;
+      $('fetchBtnText').textContent = currentMode === 'video' ? 'তথ্য খুঁজুন (Find Media)' : 'ছবি খুঁজুন (Find Photos)';
+    }
+  }
+
+  function selectQuality(elem, val) {
+    document.querySelectorAll('.q-chip').forEach(c => c.classList.remove('selected'));
+    elem.classList.add('selected');
+    selectedQuality = val;
+  }
+
+  function toggleDownloadBtn() {
+    $('btnDownload').disabled = !$('chkAgree').checked;
+  }
+
+  async function startDownload() {
+    const url = $('urlInput').value.trim();
+    if (!url) return;
+
+    $('btnDownload').disabled = true;
+    $('progressBox').style.display = 'block';
+    $('barFill').style.width = '5%';
+    $('statusPct').textContent = '5%';
+    $('statusText').textContent = 'সার্ভার প্রসেসিং শুরু হচ্ছে...';
+    clearError();
+
+    try {
+      const res = await fetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          mode: currentMode,
+          quality: selectedQuality,
+          code: $('accessCode').value
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'ডাউনলোড শুরু করা যায়নি।');
+      }
+
+      // Poll Status
+      const jobId = data.job;
+      const pollTimer = setInterval(async () => {
+        try {
+          const sRes = await fetch('/api/status/' + jobId);
+          const sData = await sRes.json();
+
+          const pct = sData.progress || 10;
+          $('barFill').style.width = pct + '%';
+          $('statusPct').textContent = pct + '%';
+          $('statusText').textContent = sData.message || 'ডাউনলোড হচ্ছে...';
+
+          if (sData.status === 'done') {
+            clearInterval(pollTimer);
+            $('statusText').textContent = 'সম্পন্ন! ডিভাইস স্টোরেজে সেভ হচ্ছে...';
+            $('barFill').style.width = '100%';
+            $('statusPct').textContent = '100%';
+            $('btnDownload').disabled = false;
+
+            // Trigger Direct Download
+            const dlLink = document.createElement('a');
+            dlLink.href = '/api/file/' + jobId;
+            dlLink.setAttribute('download', '');
+            document.body.appendChild(dlLink);
+            dlLink.click();
+            dlLink.remove();
+          } else if (sData.status === 'error' || sData.error) {
+            clearInterval(pollTimer);
+            showError(sData.message || sData.error || 'ডাউনলোডের সময় ত্রুটি ঘটেছে।');
+            $('progressBox').style.display = 'none';
+            $('btnDownload').disabled = false;
+          }
+        } catch (e) {
+          clearInterval(pollTimer);
+          showError('সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে।');
+          $('btnDownload').disabled = false;
+        }
+      }, 1400);
+
+    } catch (err) {
+      showError(err.message);
+      $('progressBox').style.display = 'none';
+      $('btnDownload').disabled = false;
+    }
+  }
 </script>
+
 </body>
 </html>
