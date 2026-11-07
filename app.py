@@ -312,7 +312,7 @@ if UPDATE_HOURS > 0:
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, versions=get_ver())
+    return jsonify(ok=True, build="v5", versions=get_ver())
 
 @app.get("/api/config")
 def config():
