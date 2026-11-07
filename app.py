@@ -1,5 +1,5 @@
 import os, re, sys, shutil, tempfile, socket, ipaddress, time, threading, uuid, subprocess, zipfile
-import base64, hmac, signal, importlib
+import base64, hmac, signal, importlib, webbrowser
 from importlib import metadata
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, render_template, send_file
@@ -8,23 +8,25 @@ import yt_dlp
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 if not os.path.isdir(template_dir):
     template_dir = os.path.dirname(os.path.abspath(__file__))
+
 app = Flask(__name__, template_folder=template_dir)
 
-MAX_MINUTES = int(os.getenv("MAX_MINUTES", "45"))   # ভিডিওর দৈর্ঘ্যের সীমা (৪৫ মিনিট)
-RATE_LIMIT = int(os.getenv("RATE_LIMIT", "20"))      # প্রতি ঘণ্টায় প্রতি IP
-MAX_IMAGES = int(os.getenv("MAX_IMAGES", "50"))      # এক লিংক থেকে সর্বোচ্চ ছবি
-JOB_TTL = 15 * 60                                    # ১৫ মিনিট পর ফাইল মুছবে
-MAX_JOBS = 4                                         # একসাথে চলা জবের সীমা
+LOCAL = os.getenv("LOCAL_MODE") == "1"
+MAX_MINUTES = int(os.getenv("MAX_MINUTES", "600" if LOCAL else "45"))
+RATE_LIMIT = int(os.getenv("RATE_LIMIT", "100000" if LOCAL else "30"))
+MAX_IMAGES = int(os.getenv("MAX_IMAGES", "200" if LOCAL else "50"))
+JOB_TTL = (60 if LOCAL else 15) * 60
+MAX_JOBS = int(os.getenv("MAX_JOBS", "6" if LOCAL else "4"))
 
-ACCESS_CODE = os.getenv("ACCESS_CODE", "")           # সেট করলে অ্যাক্সেস কোড লাগবে
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")           # সেট করলে /api/admin/update চালু
-UPDATE_HOURS = float(os.getenv("UPDATE_HOURS", "24"))  # কত ঘণ্টা পর পর yt-dlp আপডেট
+ACCESS_CODE = os.getenv("ACCESS_CODE", "")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+UPDATE_HOURS = float(os.getenv("UPDATE_HOURS", "0" if LOCAL else "24"))
 AUTO_RESTART = os.getenv("AUTO_RESTART") == "1"
 
 _hits, _jobs = {}, {}
 _lock = threading.Lock()
 
-# ---------- কুকি ব্যবস্থাপনা ----------
+# ---------- কুকি (সার্ভার সিক্রেট বা ব্রাউজার থেকে) ----------
 COOKIE_FILE = None
 def _init_cookies():
     global COOKIE_FILE
@@ -55,6 +57,29 @@ def cookie_copy(cdir):
     except Exception:
         pass
     return dst
+
+# FFmpeg লোকেশন নির্ধারণ
+FFMPEG_EXE = None
+if shutil.which("ffmpeg"):
+    FFMPEG_EXE = "ffmpeg"
+else:
+    # Windows WinGet বা কমন লোকেশন চেক
+    winget_path = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe")
+    if os.path.exists(winget_path):
+        FFMPEG_EXE = winget_path
+    else:
+        try:
+            import imageio_ffmpeg
+            FFMPEG_EXE = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            FFMPEG_EXE = None
+
+COOKIES_BROWSER = os.getenv("COOKIES_BROWSER", "")
+def apply_cookies(opts, path):
+    if path and os.path.exists(path):
+        opts["cookiefile"] = path
+    elif COOKIES_BROWSER:
+        opts["cookiesfrombrowser"] = (COOKIES_BROWSER,)
 
 def check_access():
     if not ACCESS_CODE:
@@ -88,6 +113,12 @@ def safe_url(url):
         return False
     return True
 
+def extract_clean_url(text):
+    if not text:
+        return ""
+    m = re.search(r'https?://[^\s<>"]+', text)
+    return m.group(0) if m else text.strip()
+
 def detect_platform(url):
     h = (urlparse(url).hostname or "").lower()
     if any(x in h for x in ("youtube.com", "youtu.be")): return "youtube"
@@ -113,49 +144,30 @@ BASE_OPTS = {
     "noplaylist": True,
 }
 
-def get_extract_opts(url, cookie_path=None):
-    opts = dict(BASE_OPTS)
-    opts["format"] = "all"
-    platform = detect_platform(url)
-    if platform == "youtube":
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["tv_embedded", "android_creator", "visionos", "android"]
-            }
-        }
-    elif cookie_path:
-        opts["cookiefile"] = cookie_path
-    return opts
-
-# ---------- ওয়ার্কার ফাংশন ----------
+# ---------- ডাউনলোড ওয়ার্কার ----------
 def run_video(job, url, quality):
     tmp = job["dir"]
 
     def hook(d):
-        if d["status"] == "downloading":
+        if d.get("status") == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             if total:
-                job["progress"] = min(90, int(d["downloaded_bytes"] * 90 / total))
-            job["message"] = "ভিডিও ডাউনলোড হচ্ছে..."
-        elif d["status"] == "finished":
+                job["progress"] = min(90, int(d.get("downloaded_bytes", 0) * 90 / total))
+            job["message"] = f"ডাউনলোড হচ্ছে... ({job['progress']}%)"
+        elif d.get("status") == "finished":
             job["progress"] = 92
-            job["message"] = "HD ভিডিও ও অডিও মার্জ হচ্ছে (FFmpeg)..."
+            job["message"] = "প্রসেস হচ্ছে (FFmpeg মার্জ/কনভার্ট)..."
 
-    platform = detect_platform(url)
-    opts = dict(BASE_OPTS,
-                outtmpl=os.path.join(tmp, "%(title).80s.%(ext)s"),
-                merge_output_format="mp4",
-                progress_hooks=[hook],
-                match_filter=yt_dlp.utils.match_filter_func(f"duration < {MAX_MINUTES * 60}"))
-
-    if platform == "youtube":
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["tv_embedded", "android_creator", "visionos", "android"]
-            }
-        }
-    elif job.get("cookie"):
-        opts["cookiefile"] = job.get("cookie")
+    opts = dict(
+        BASE_OPTS,
+        outtmpl=os.path.join(tmp, "%(title).80s.%(ext)s"),
+        merge_output_format="mp4",
+        progress_hooks=[hook],
+        match_filter=yt_dlp.utils.match_filter_func(f"duration <? {MAX_MINUTES * 60} & !is_live")
+    )
+    apply_cookies(opts, job.get("cookie"))
+    if FFMPEG_EXE:
+        opts["ffmpeg_location"] = FFMPEG_EXE
 
     if quality == "audio":
         opts["format"] = "bestaudio/best"
@@ -166,84 +178,84 @@ def run_video(job, url, quality):
         }]
     else:
         q = int(re.sub(r"\D", "", quality) or 1080)
-        # ফুল এইচডি বা এইচডির জন্য সর্বোচ্চ কোয়ালিটি নির্বাচন (ভার্টিক্যাল ১০৮০x১৩৫০ পর্যন্ত)
-        max_h = 1440 if q >= 1080 else (900 if q >= 720 else q)
-        opts["format"] = f"bv*[height<={max_h}]+ba/b[height<={max_h}]/b"
-
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.extract_info(url, download=True)
-    except Exception as e:
-        # ফলব্যাক: ইউটিউবে কুকি ছাড়া ফেইল হলে কুকি ট্রাই করা
-        if platform == "youtube" and job.get("cookie") and "cookiefile" not in opts:
-            opts_fb = dict(opts, cookiefile=job["cookie"])
-            opts_fb.pop("extractor_args", None)
-            with yt_dlp.YoutubeDL(opts_fb) as ydl:
-                ydl.extract_info(url, download=True)
-        elif "cookiefile" in opts:
-            opts_fb = dict(opts)
-            opts_fb.pop("cookiefile", None)
-            with yt_dlp.YoutubeDL(opts_fb) as ydl:
-                ydl.extract_info(url, download=True)
+        if q >= 1080:
+            opts["format"] = "bv*[height<=1080]+ba/bv*[width<=1080]+ba/bestvideo+bestaudio/best"
         else:
-            raise
+            opts["format"] = f"bv*[height<={q}]+ba/bv*[width<={q}]+ba/b[height<={q}]/b[width<={q}]/best"
 
-    files = [os.path.join(tmp, f) for f in os.listdir(tmp)
-             if os.path.isfile(os.path.join(tmp, f)) and not f.endswith((".part", ".ytdl"))]
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.extract_info(url, download=True)
+
+    files = [f for f in os.listdir(tmp) if os.path.isfile(os.path.join(tmp, f))]
     if not files:
-        raise RuntimeError(f"ভিডিওটি ডাউনলোডযোগ্য নয় বা দৈর্ঘ্য {MAX_MINUTES} মিনিটের বেশি।")
-    return files[0]
+        raise RuntimeError(f"ভিডিও {MAX_MINUTES} মিনিটের বেশি বা ডাউনলোড করা সম্ভব হয়নি।")
+    return os.path.join(tmp, files[0])
 
 def run_images(job, url):
     tmp = job["dir"]
-    job["message"] = "ফুল এইচডি ছবি খোঁজা ও ডাউনলোড হচ্ছে..."
+    job["message"] = "ছবি খোঁজা ও এইচডি আকারে ডাউনলোড হচ্ছে..."
     job["progress"] = 25
 
-    cmd = [sys.executable, "-m", "gallery_dl", "-D", tmp, "--range", f"1-{MAX_IMAGES}"]
+    gdl_bin = shutil.which("gallery-dl")
+    if gdl_bin:
+        cmd = [gdl_bin]
+    else:
+        cmd = [sys.executable, "-m", "gallery_dl"]
+
+    cmd += ["-D", tmp, "--range", f"1-{MAX_IMAGES}"]
     if job.get("cookie"):
         cmd += ["--cookies", job["cookie"]]
+    elif COOKIES_BROWSER:
+        cmd += ["--cookies-from-browser", COOKIES_BROWSER]
 
     r = subprocess.run(cmd + [url], capture_output=True, text=True, timeout=300)
 
-    files = []
+    # সাবফোল্ডারসহ সকল ডাউনলোডকৃত ফাইল সংগ্রহ (Twitter, Instagram ইত্যাদির জন্য)
+    all_files = []
     for root, _, filenames in os.walk(tmp):
-        for f in filenames:
-            if not f.endswith((".zip", ".part", ".tmp")):
-                files.append(os.path.join(root, f))
-    files = sorted(files)
-    if not files:
-        err = (r.stderr or r.stdout or "")[-200:].strip()
-        raise RuntimeError("কোনো ছবি পাওয়া যায়নি বা লিঙ্কটি প্রাইভেট। " + err)
+        for fn in filenames:
+            if not fn.endswith(".zip"):
+                all_files.append(os.path.join(root, fn))
 
+    if not all_files:
+        raise RuntimeError("কোনো ছবি পাওয়া যায়নি। সাইটটিতে লগইন কুকি প্রয়োজন হতে পারে।")
+
+    # ফাইলনেমে উইন্ডোজের জন্য ক্ষতিকর ক্যারেক্টার পরিষ্কার
+    clean_files = []
+    for fpath in all_files:
+        dirname, fname = os.path.split(fpath)
+        nf = re.sub(r'[<>:"/\\|?*]', "_", fname)
+        target_path = os.path.join(tmp, nf)
+        if fpath != target_path:
+            shutil.move(fpath, target_path)
+        clean_files.append(target_path)
+
+    if len(clean_files) == 1:
+        return clean_files[0]
+
+    job["message"] = "সকল এইচডি ছবি জিপ (ZIP) করা হচ্ছে..."
     job["progress"] = 90
-    if len(files) == 1:
-        job["message"] = "ছবি প্রস্তুত!"
-        return files[0]
-
-    job["message"] = f"{len(files)}টি মূল এইচডি ছবির ZIP তৈরি হচ্ছে..."
-    zpath = os.path.join(tmp, "HD_Images.zip")
-    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for fpath in files:
-            z.write(fpath, os.path.basename(fpath))
-    job["message"] = "প্রস্তুত!"
+    zpath = os.path.join(tmp, "hd_images.zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for cf in clean_files:
+            z.write(cf, os.path.basename(cf))
     return zpath
 
 def worker(jid, url, mode, quality):
-    job = _jobs[jid]
+    job = _jobs.get(jid)
+    if not job:
+        return
     try:
         path = run_images(job, url) if mode == "image" else run_video(job, url, quality)
-        job.update(status="done", progress=100, message="ডাউনলোড প্রস্তুত!", path=path)
+        job.update(status="done", progress=100, message="ডাউনলোড সম্পন্ন!", path=path)
     except subprocess.TimeoutExpired:
-        job.update(status="error", message="অনুরোধের সময়সীমা পার হয়ে গেছে।")
+        job.update(status="error", message="সময় শেষ হয়ে গেছে (টাইমআউট)।")
     except Exception as e:
-        msg = str(e)
-        if "Sign in" in msg:
-            msg = "এই লিঙ্কটি ডাউনলোড করতে লগইন প্রয়োজন। অনুগ্রহ করে কুকি যোগ করুন।"
-        job.update(status="error", message=msg[:250])
+        job.update(status="error", message=str(e)[:220])
     finally:
         shutil.rmtree(job.get("cdir", ""), ignore_errors=True)
 
-# ---------- এপিআই রুটস ----------
+# ---------- রুটসমূহ ----------
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -251,83 +263,74 @@ def index():
 @app.post("/api/info")
 def info():
     if not rate_ok(client_ip()):
-        return jsonify(error="অতিরিক্ত অনুরোধ! কিছুক্ষণ পর আবার চেষ্টা করুন।"), 429
+        return jsonify(error="অতিরিক্ত অনুরোধ! কিছুক্ষণ পর চেষ্টা করুন।"), 429
     if not check_access():
-        return jsonify(error="প্রদত্ত অ্যাক্সেস কোডটি সঠিক নয়।"), 401
+        return jsonify(error="অ্যাক্সেস কোড ভুল।"), 401
 
-    url = (request.json or {}).get("url", "").strip()
+    raw_url = (request.json or {}).get("url", "")
+    url = extract_clean_url(raw_url)
     if not safe_url(url):
-        return jsonify(error="অবৈধ বা অনিরাপদ লিঙ্ক প্রদান করা হয়েছে।"), 400
+        return jsonify(error="অবৈধ বা অসমর্থিত লিংক। সঠিক URL দিন।"), 400
 
-    platform = detect_platform(url)
     cdir = tempfile.mkdtemp(prefix="ck_")
+    platform = detect_platform(url)
     try:
-        cf = cookie_copy(cdir)
-        opts = get_extract_opts(url, cf)
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                d = ydl.extract_info(url, download=False)
-        except Exception as e:
-            if platform == "youtube" and cf and "cookiefile" not in opts:
-                opts_fb = dict(BASE_OPTS, cookiefile=cf, format="all")
-                with yt_dlp.YoutubeDL(opts_fb) as ydl:
-                    d = ydl.extract_info(url, download=False)
-            elif "cookiefile" in opts:
-                opts_fb = dict(opts)
-                opts_fb.pop("cookiefile", None)
-                with yt_dlp.YoutubeDL(opts_fb) as ydl:
-                    d = ydl.extract_info(url, download=False)
-            else:
-                raise
+        opts = dict(BASE_OPTS)
+        apply_cookies(opts, cookie_copy(cdir))
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            d = ydl.extract_info(url, download=False)
     except Exception as e:
-        err_str = str(e)
-        if "Sign in" in err_str:
-            err_str = "ভিডিওটি দেখতে লগইন প্রয়োজন (YouTube Bot Protection)।"
-        return jsonify(error=f"তথ্য আনা যায়নি: {err_str[:200]}"), 422
+        err_msg = str(e)
+        if "Sign in to confirm" in err_msg or "bot" in err_msg.lower():
+            return jsonify(error="লগইন ভেরিফিকেশন প্রয়োজন। অ্যাপটি নিজের কম্পিউটারে চালিয়ে সরাসরি কুকিসহ ব্যবহার করুন (README দেখুন)।"), 422
+        return jsonify(error=f"তথ্য আনা যায়নি: {err_msg[:200]}"), 422
     finally:
         shutil.rmtree(cdir, ignore_errors=True)
 
-    if not d:
-        return jsonify(error="কোনো মিডিয়া তথ্য পাওয়া যায়নি।"), 422
+    # স্টোরিবোর্ড (sb0, sb1, sb2) এবং অডিও-অনলি বাদ দিয়ে সঠিক ভিডিও রেজোলিউশন ফিল্টার
+    valid_dims = []
+    for f in d.get("formats", []):
+        fid = str(f.get("format_id", ""))
+        vcodec = f.get("vcodec")
+        ext = f.get("ext")
+        protocol = str(f.get("protocol", ""))
 
-    if "entries" in d and d.get("entries"):
-        d = next((e for e in d["entries"] if e), d)
+        if fid.startswith("sb") or ext == "mhtml" or protocol == "mhtml":
+            continue
+        if vcodec in (None, "none", "images"):
+            continue
 
-    raw_formats = d.get("formats", [])
-    # শুধুমাত্র রিয়েল ভিডিও স্ট্রিম থাকা রেজোলিউশন ফিল্টার (mhtml ও থাম্বনেইল স্টোরিবোর্ড বাদ দেওয়া)
-    video_formats = [
-        f for f in raw_formats
-        if f.get("height")
-        and f.get("vcodec") not in (None, "none", "images")
-        and f.get("protocol") != "mhtml"
-        and f.get("ext") != "mhtml"
-        and not str(f.get("format_id", "")).startswith("sb")
-        and int(f.get("height", 0)) >= 144
-    ]
-    heights = sorted({int(f["height"]) for f in video_formats}, reverse=True)
+        h = f.get("height")
+        w = f.get("width")
+        if h or w:
+            dim = min(h, w) if (h and w) else (h or w)
+            valid_dims.append(dim)
 
-    # রেজোলিউশন ক্যাটাগরি তৈরি (1080p, 720p, 480p, 360p)
+    dims = sorted(set(valid_dims), reverse=True)
     resolutions = []
     seen = set()
-    for h in heights:
-        if h >= 1080 and "1080" not in seen:
-            resolutions.append({"height": 1080, "actual_height": h, "label": "1080p", "badge": "Full HD"})
+
+    for dim in dims:
+        if dim >= 950 and "1080" not in seen:
+            resolutions.append({"height": 1080, "label": "1080p", "badge": "Full HD", "desc": "সর্বোচ্চ স্পষ্টতা"})
             seen.add("1080")
-        elif h >= 720 and h < 1080 and "720" not in seen:
-            resolutions.append({"height": 720, "actual_height": h, "label": "720p", "badge": "HD"})
+        elif dim >= 650 and dim < 950 and "720" not in seen:
+            resolutions.append({"height": 720, "label": "720p", "badge": "HD", "desc": "এইচডি কোয়ালিটি"})
             seen.add("720")
-        elif h >= 480 and h < 720 and "480" not in seen:
-            resolutions.append({"height": 480, "actual_height": h, "label": "480p", "badge": "SD"})
+        elif dim >= 420 and dim < 650 and "480" not in seen:
+            resolutions.append({"height": 480, "label": "480p", "badge": "SD", "desc": "স্ট্যান্ডার্ড"})
             seen.add("480")
-        elif h >= 360 and h < 480 and "360" not in seen:
-            resolutions.append({"height": 360, "actual_height": h, "label": "360p", "badge": "SD"})
+        elif dim >= 250 and dim < 420 and "360" not in seen:
+            resolutions.append({"height": 360, "label": "360p", "badge": "SD", "desc": "ডাটা সেভার"})
             seen.add("360")
 
-    # কোনো ভিডিও ফরম্যাট না পেলে ডিফল্ট স্ট্যান্ডার্ড অপশন
+    # যদি ভিডিও ফরম্যাট ফাঁকা থাকে (ক্লাউড ব্লক বা রেস্ট্রিকশন), স্ট্যান্ডার্ড অপশন সরবরাহ
     if not resolutions:
         resolutions = [
-            {"height": 1080, "actual_height": 1080, "label": "1080p", "badge": "Full HD"},
-            {"height": 720, "actual_height": 720, "label": "720p", "badge": "HD"}
+            {"height": 1080, "label": "1080p", "badge": "Full HD", "desc": "সর্বোচ্চ কোয়ালিটি"},
+            {"height": 720, "label": "720p", "badge": "HD", "desc": "এইচডি কোয়ালিটি"},
+            {"height": 480, "label": "480p", "badge": "SD", "desc": "স্ট্যান্ডার্ড"},
+            {"height": 360, "label": "360p", "badge": "SD", "desc": "ডাটা সেভার"}
         ]
 
     return jsonify(
@@ -336,9 +339,7 @@ def info():
         thumbnail=d.get("thumbnail") or "",
         uploader=d.get("uploader") or d.get("channel") or "",
         duration=d.get("duration") or 0,
-        heights=heights,
         resolutions=resolutions,
-        has_video=bool(heights),
         has_audio=True
     )
 
@@ -351,16 +352,16 @@ def start():
         return jsonify(error="অতিরিক্ত অনুরোধ! কিছুক্ষণ পর চেষ্টা করুন।"), 429
 
     b = request.json or {}
-    url = b.get("url", "").strip()
+    url = extract_clean_url(b.get("url", ""))
     mode = b.get("mode", "video")
     quality = str(b.get("quality", "1080"))
 
     if mode not in ("video", "image") or not safe_url(url):
-        return jsonify(error="অনুরোধটি সঠিক নয়।"), 400
+        return jsonify(error="অবৈধ অনুরোধ। সঠিক URL দিন।"), 400
 
     with _lock:
         if sum(1 for j in _jobs.values() if j["status"] == "running") >= MAX_JOBS:
-            return jsonify(error="সার্ভার বর্তমানে ব্যস্ত রয়েছে। অনুগ্রহ করে ১ মিনিট পর আবার চেষ্টা করুন।"), 503
+            return jsonify(error="সার্ভার এখন ব্যস্ত, অনুগ্রহ করে ১ মিনিট পর চেষ্টা করুন।"), 503
 
         jid = uuid.uuid4().hex
         cdir = tempfile.mkdtemp(prefix="ck_")
@@ -381,7 +382,7 @@ def start():
 def status(jid):
     j = _jobs.get(jid)
     if not j:
-        return jsonify(error="জব পাওয়া যায়নি বা মেয়াদ শেষ হয়ে গেছে।"), 404
+        return jsonify(error="জব পাওয়া যায়নি বা মেয়াদ শেষ।"), 404
     return jsonify(status=j["status"], progress=j["progress"], message=j["message"])
 
 @app.get("/api/file/<jid>")
@@ -390,10 +391,9 @@ def file(jid):
     if not j or j["status"] != "done":
         return jsonify(error="ফাইল এখনও প্রস্তুত নয়।"), 404
     fpath = j["path"]
-    filename = os.path.basename(fpath)
-    return send_file(fpath, as_attachment=True, download_name=filename)
+    return send_file(fpath, as_attachment=True, download_name=os.path.basename(fpath))
 
-# ---------- সিস্টেম মেটাডাটা ও হেলথ ----------
+# ---------- ভার্সন ও অটো আপডেট ----------
 def get_ver():
     importlib.invalidate_caches()
     out = {}
@@ -435,11 +435,54 @@ if UPDATE_HOURS > 0:
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, build="v6-ultimate", versions=get_ver())
+    return jsonify(ok=True, mode="local" if LOCAL else "cloud", ffmpeg=bool(FFMPEG_EXE), versions=get_ver())
 
 @app.get("/api/config")
 def config():
-    return jsonify(code_required=bool(ACCESS_CODE), max_minutes=MAX_MINUTES)
+    return jsonify(code_required=bool(ACCESS_CODE), max_minutes=MAX_MINUTES, local=LOCAL)
+
+@app.post("/api/admin/update")
+def admin_update():
+    tok = request.headers.get("X-Admin-Token", "")
+    if not ADMIN_TOKEN or not hmac.compare_digest(tok, ADMIN_TOKEN):
+        return jsonify(error="অননুমোদিত"), 404
+    before = get_ver()
+    ok, err = do_update()
+    after = get_ver()
+    if ok and after != before:
+        threading.Thread(target=restart_when_idle, daemon=True).start()
+    return jsonify(ok=ok, before=before, after=after, error=None if ok else err)
+
+HOST = os.getenv("HOST", "127.0.0.1" if LOCAL else "0.0.0.0")
+
+# Telegram মডিউল ইন্টিগ্রেশন
+try:
+    import tg
+    TG_ENABLED = tg.init_telegram(app, _jobs, _lock, MAX_JOBS, ACCESS_CODE, LOCAL, HOST)
+except Exception:
+    TG_ENABLED = False
+
+def lan_ip():
+    try:
+        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sk.connect(("10.255.255.255", 1))
+        ip = sk.getsockname()[0]
+        sk.close()
+        return ip
+    except Exception:
+        return None
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 7860)))
+    host = HOST
+    port = int(os.getenv("PORT", 7860))
+    print("\n==============================================")
+    print(f" Local App   : http://127.0.0.1:{port}")
+    if host == "0.0.0.0" and lan_ip():
+        print(f" Phone (Wi-Fi): http://{lan_ip()}:{port}")
+    print(" FFmpeg      :", "Ready" if FFMPEG_EXE else "Missing (fallback to direct stream)")
+    print(" Telegram    :", "Enabled" if TG_ENABLED else "Local only")
+    print(" Stop        : Press Ctrl+C")
+    print("==============================================\n")
+    if os.getenv("OPEN_BROWSER") == "1":
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    app.run(host=host, port=port, threaded=True)

@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 cookies.txt
 .env
+.venv/
 *.zip
-calendar-*.png
-media-downloader/
+*.log

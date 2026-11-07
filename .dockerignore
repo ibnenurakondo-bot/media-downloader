@@ -1,8 +1,4 @@
-__pycache__/
+__pycache__
 *.pyc
 .git
 cookies.txt
-.env
-*.zip
-calendar-*.png
-media-downloader/

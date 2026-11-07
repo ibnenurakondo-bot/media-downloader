@@ -1,0 +1,5 @@
+flask
+yt-dlp[default]
+gallery-dl
+imageio-ffmpeg
+telethon
