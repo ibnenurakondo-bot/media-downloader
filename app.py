@@ -92,7 +92,16 @@ def cleanup_jobs():
             shutil.rmtree(_jobs[jid].get("cdir", ""), ignore_errors=True)
             del _jobs[jid]
 
-BASE_OPTS = {"quiet": True, "no_warnings": True, "noplaylist": True}
+BASE_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "noplaylist": True,
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "ios", "mweb"]
+        }
+    }
+}
 
 # ---------- ওয়ার্কার ----------
 def run_video(job, url, quality):
